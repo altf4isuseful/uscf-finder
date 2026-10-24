@@ -1,0 +1,294 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tournament Sequence Finder</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700&family=JetBrains+Mono:wght@400;600&family=Archivo+Narrow:wght@400;500&display=swap">
+<style>
+/* Layout: one narrow column. Letter inputs on top, data below, matches as a list of rows with the matched run shown as chained chips. */
+:root {
+  --bg: #f3f5f4;
+  --surface: #ffffff;
+  --fg: #16201b;
+  --muted: #5d6b64;
+  --line: #d3dad6;
+  --accent: #2f6b4a;
+  --accent-fg: #ffffff;
+  --accent-soft: #dcebe2;
+  --warn: #9a3b2e;
+  --font-display: "Archivo", system-ui, sans-serif;
+  --font-body: "Archivo Narrow", "Archivo", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #101713; --surface: #18221c; --fg: #e6ece8; --muted: #93a39a;
+    --line: #2b3a32; --accent: #6fbf90; --accent-fg: #0c1510; --accent-soft: #1f3528; --warn: #e08a7c;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #101713; --surface: #18221c; --fg: #e6ece8; --muted: #93a39a;
+  --line: #2b3a32; --accent: #6fbf90; --accent-fg: #0c1510; --accent-soft: #1f3528; --warn: #e08a7c;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg);
+  font-family: var(--font-body); font-size: 16px; line-height: 1.5;
+  padding-block: 24px 48px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+main { max-width: 680px; margin: 0 auto; display: grid; gap: 20px; }
+h1 { font-family: var(--font-display); font-weight: 700; font-size: 1.7rem; letter-spacing: -0.01em; margin: 0; text-wrap: balance; }
+.sub { color: var(--muted); margin: 4px 0 0; max-width: 60ch; }
+h2 { font-family: var(--font-display); font-size: 0.78rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 16px; }
+label { display: block; font-weight: 500; margin-bottom: 6px; }
+input[type="text"], textarea {
+  width: 100%; font: inherit; color: var(--fg); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 4px; padding: 10px 12px;
+}
+input[type="text"] { font-family: var(--font-mono); font-size: 1.1rem; letter-spacing: 0.12em; text-transform: uppercase; }
+textarea { font-family: var(--font-mono); font-size: 0.8rem; line-height: 1.45; min-height: 150px; resize: vertical; white-space: pre; overflow: auto; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.hint { color: var(--muted); font-size: 0.9rem; margin: 6px 0 0; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
+button, .filebtn {
+  font: inherit; font-weight: 500; cursor: pointer; border-radius: 4px;
+  padding: 8px 14px; border: 1px solid var(--line); background: var(--surface); color: var(--fg);
+}
+button.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+button:hover, .filebtn:hover { border-color: var(--accent); }
+.filebtn input { display: none; }
+.pattern { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 12px; font-family: var(--font-mono); }
+.sq { width: 34px; height: 34px; display: grid; place-items: center; font-weight: 600; border-radius: 3px; background: var(--accent-soft); color: var(--accent); border: 1px solid var(--line); }
+.arrow { color: var(--muted); }
+.summary { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.count { font-family: var(--font-mono); font-size: 0.85rem; color: var(--muted); }
+ul.results { list-style: none; margin: 0; padding: 0; display: grid; }
+ul.results li { padding: 12px 0; border-top: 1px solid var(--line); min-width: 0; }
+ul.results li:first-child { border-top: 0; }
+.pname { font-family: var(--font-display); font-weight: 700; }
+.pid { font-family: var(--font-mono); font-size: 0.78rem; color: var(--muted); margin-left: 8px; }
+.run { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; margin-top: 6px; }
+.chip { font-size: 0.9rem; background: var(--accent-soft); border-radius: 3px; padding: 2px 8px; min-width: 0; overflow-wrap: anywhere; }
+.chip b { font-family: var(--font-mono); font-weight: 600; color: var(--accent); margin-right: 4px; }
+.empty, .error { color: var(--muted); padding: 8px 0; margin: 0; }
+.error { color: var(--warn); }
+.tag { font-family: var(--font-mono); font-size: 0.72rem; border: 1px solid var(--line); border-radius: 3px; padding: 1px 6px; color: var(--muted); margin-left: 8px; vertical-align: middle; }
+</style>
+
+<main>
+  <header>
+    <h1>Tournament Sequence Finder</h1>
+    <p class="sub">Lists players whose tournament history has back-to-back events starting with your letters, in that exact order, with nothing played in between.</p>
+  </header>
+
+  <section class="panel" aria-labelledby="h-letters">
+    <h2 id="h-letters">Letters</h2>
+    <label for="letters">Starting letters, in order</label>
+    <input id="letters" type="text" value="W, U, A" autocomplete="off" spellcheck="false" inputmode="text">
+    <p class="hint">Separate with commas or spaces, or type them together like WUA.</p>
+    <div class="pattern" id="pattern" aria-live="polite"></div>
+  </section>
+
+  <section class="panel" aria-labelledby="h-fetch">
+    <h2 id="h-fetch">Fetch from USCF</h2>
+    <label for="ids">USCF member IDs</label>
+    <input id="ids" type="text" placeholder="12743305, 12345678" autocomplete="off" spellcheck="false" style="text-transform:none;letter-spacing:0;font-size:0.95rem">
+    <p class="hint">Needs the Python server running (python app.py). Fetched histories fill the box below.</p>
+    <div class="row"><button id="fetch" class="primary" type="button">Fetch histories</button><span class="count" id="fetchmsg" aria-live="polite"></span></div>
+  </section>
+
+  <section class="panel" aria-labelledby="h-data">
+    <h2 id="h-data">Player histories <span class="tag" id="datatag">example data</span></h2>
+    <label for="data">CSV with columns player, tournament, date (YYYY-MM-DD). An optional uscf_id column is shown if present.</label>
+    <textarea id="data" spellcheck="false"></textarea>
+    <div class="row">
+      <label class="filebtn" for="file" style="margin:0">Load CSV file<input id="file" type="file" accept=".csv,text/csv,text/plain"></label>
+      <button id="sample" type="button">Reset to example</button>
+      <button id="run" class="primary" type="button">Find players</button>
+    </div>
+  </section>
+
+  <section class="panel" aria-labelledby="h-res">
+    <div class="summary">
+      <h2 id="h-res" style="margin:0">Matches</h2>
+      <span class="count" id="count"></span>
+    </div>
+    <div id="results" aria-live="polite"></div>
+    <div class="row"><button id="copy" type="button">Copy names</button><span class="count" id="copied"></span></div>
+  </section>
+</main>
+
+<script>
+(function () {
+  var SAMPLE = [
+    "player,uscf_id,tournament,date",
+    "Alina Torres,30000001,World Open,2026-01-10",
+    "Alina Torres,30000001,US Open,2026-02-14",
+    "Alina Torres,30000001,Atlanta Classic,2026-03-20",
+    "Ben Okafor,30000002,World Open,2026-01-10",
+    "Ben Okafor,30000002,Chicago Open,2026-02-14",
+    "Ben Okafor,30000002,US Open,2026-03-20",
+    "Ben Okafor,30000002,Atlanta Classic,2026-04-25",
+    "Chen Wei,30000003,Western States Open,2026-01-05",
+    "Chen Wei,30000003,Ultimate Blitz,2026-02-02",
+    "Chen Wei,30000003,Arizona Championship,2026-03-09",
+    "Chen Wei,30000003,Boston Open,2026-04-13",
+    "Dana Petrov,30000004,Wisconsin Open,2026-01-18",
+    "Dana Petrov,30000004,Atlanta Classic,2026-02-22",
+    "Dana Petrov,30000004,US Open,2026-03-29"
+  ].join("\n");
+
+  var $ = function (id) { return document.getElementById(id); };
+  var dataEl = $("data"), lettersEl = $("letters");
+
+  function parseLetters(raw) {
+    var s = raw.trim();
+    if (!s) return [];
+    var parts = s.split(/[\s,;>]+/).filter(Boolean);
+    if (parts.length === 1 && parts[0].length > 1) parts = parts[0].split("");
+    return parts.map(function (p) { return p.replace(/[^0-9a-z]/gi, "").charAt(0).toLowerCase(); }).filter(Boolean);
+  }
+
+  function parseCSV(text) {
+    var rows = [], row = [], cur = "", q = false, i, c;
+    for (i = 0; i < text.length; i++) {
+      c = text[i];
+      if (q) {
+        if (c === '"') { if (text[i + 1] === '"') { cur += '"'; i++; } else q = false; }
+        else cur += c;
+      } else if (c === '"') q = true;
+      else if (c === ",") { row.push(cur); cur = ""; }
+      else if (c === "\n" || c === "\r") {
+        if (c === "\r" && text[i + 1] === "\n") i++;
+        row.push(cur); cur = "";
+        if (row.some(function (x) { return x.trim() !== ""; })) rows.push(row);
+        row = [];
+      } else cur += c;
+    }
+    row.push(cur);
+    if (row.some(function (x) { return x.trim() !== ""; })) rows.push(row);
+    return rows;
+  }
+
+  function firstChar(name) {
+    var m = name.match(/[0-9a-z]/i);
+    return m ? m[0].toLowerCase() : "";
+  }
+
+  function analyze() {
+    var letters = parseLetters(lettersEl.value);
+    var pat = $("pattern");
+    pat.innerHTML = "";
+    letters.forEach(function (l, i) {
+      if (i) { var a = document.createElement("span"); a.className = "arrow"; a.textContent = "→"; pat.appendChild(a); }
+      var s = document.createElement("span"); s.className = "sq"; s.textContent = l.toUpperCase(); pat.appendChild(s);
+    });
+
+    var res = $("results"); res.innerHTML = "";
+    var rows = parseCSV(dataEl.value);
+    if (rows.length < 2) return showMsg("Add a header row and at least one event.", true);
+    var head = rows[0].map(function (h) { return h.trim().toLowerCase(); });
+    var ip = head.indexOf("player"), it = head.indexOf("tournament"), id = head.indexOf("date"), iu = head.indexOf("uscf_id");
+    if (ip < 0 || it < 0 || id < 0) return showMsg("The header row needs the columns player, tournament and date.", true);
+    if (!letters.length) return showMsg("Type at least one letter above.", false);
+
+    var by = {};
+    rows.slice(1).forEach(function (r) {
+      var p = (r[ip] || "").trim(), t = (r[it] || "").trim(), d = (r[id] || "").trim();
+      if (!p || !t) return;
+      var k = iu >= 0 && (r[iu] || "").trim() ? r[iu].trim() : p;
+      (by[k] = by[k] || { name: p, uscf: iu >= 0 ? (r[iu] || "").trim() : "", ev: [] }).ev.push({ t: t, d: d });
+    });
+
+    var n = letters.length, found = [];
+    Object.keys(by).forEach(function (k) {
+      var o = by[k];
+      o.ev.sort(function (a, b) { return a.d < b.d ? -1 : a.d > b.d ? 1 : 0; });
+      var runs = [];
+      for (var i = 0; i + n <= o.ev.length; i++) {
+        var ok = true;
+        for (var j = 0; j < n; j++) if (firstChar(o.ev[i + j].t) !== letters[j]) { ok = false; break; }
+        if (ok) runs.push(o.ev.slice(i, i + n));
+      }
+      if (runs.length) found.push({ name: o.name, uscf: o.uscf, runs: runs });
+    });
+    found.sort(function (a, b) { return a.name.localeCompare(b.name); });
+    render(found, Object.keys(by).length);
+  }
+
+  var lastNames = [];
+  function showMsg(msg, isErr) {
+    $("count").textContent = "";
+    lastNames = [];
+    var p = document.createElement("p"); p.className = isErr ? "error" : "empty"; p.textContent = msg;
+    $("results").appendChild(p);
+  }
+
+  function render(found, total) {
+    var res = $("results");
+    lastNames = found.map(function (f) { return f.name; });
+    $("count").textContent = found.length + " of " + total + " players";
+    if (!found.length) { var p = document.createElement("p"); p.className = "empty"; p.textContent = "No player has those tournaments back to back in that order."; res.appendChild(p); return; }
+    var ul = document.createElement("ul"); ul.className = "results";
+    found.forEach(function (f) {
+      var li = document.createElement("li");
+      var h = document.createElement("div");
+      var nm = document.createElement("span"); nm.className = "pname"; nm.textContent = f.name; h.appendChild(nm);
+      if (f.uscf) { var u = document.createElement("span"); u.className = "pid"; u.textContent = f.uscf; h.appendChild(u); }
+      li.appendChild(h);
+      f.runs.forEach(function (run) {
+        var d = document.createElement("div"); d.className = "run";
+        run.forEach(function (e, i) {
+          if (i) { var a = document.createElement("span"); a.className = "arrow"; a.textContent = "→"; d.appendChild(a); }
+          var c = document.createElement("span"); c.className = "chip";
+          var b = document.createElement("b"); b.textContent = e.t.match(/[0-9a-z]/i) ? e.t.match(/[0-9a-z]/i)[0].toUpperCase() : "";
+          c.appendChild(b); c.appendChild(document.createTextNode(e.t + (e.d ? " · " + e.d : "")));
+          d.appendChild(c);
+        });
+        li.appendChild(d);
+      });
+      ul.appendChild(li);
+    });
+    res.appendChild(ul);
+  }
+
+  function setSample() { dataEl.value = SAMPLE; $("datatag").hidden = false; analyze(); }
+
+  $("run").addEventListener("click", analyze);
+  lettersEl.addEventListener("input", analyze);
+  dataEl.addEventListener("input", function () { $("datatag").hidden = true; });
+  $("sample").addEventListener("click", setSample);
+  $("file").addEventListener("change", function (e) {
+    var f = e.target.files && e.target.files[0]; if (!f) return;
+    var r = new FileReader();
+    r.onload = function () { dataEl.value = String(r.result); $("datatag").hidden = true; analyze(); };
+    r.readAsText(f);
+  });
+  $("copy").addEventListener("click", function () {
+    var text = lastNames.join("\n"), out = $("copied");
+    function done(ok) { out.textContent = ok ? "Copied" : "Select and copy manually"; setTimeout(function () { out.textContent = ""; }, 1800); }
+    if (!lastNames.length) return done(false);
+    try { navigator.clipboard.writeText(text).then(function () { done(true); }, function () { done(false); }); }
+    catch (err) { done(false); }
+  });
+
+  $("fetch").addEventListener("click", function () {
+    var msg = $("fetchmsg"), ids = $("ids").value.trim();
+    if (!ids) { msg.textContent = "Enter at least one USCF ID."; return; }
+    msg.textContent = "Fetching\u2026";
+    fetch("/api/history?ids=" + encodeURIComponent(ids)).then(function (r) { return r.json(); }).then(function (j) {
+      if (j.error) { msg.textContent = j.error; return; }
+      var bad = Object.keys(j.errors || {});
+      if (j.rows) { dataEl.value = j.csv; $("datatag").hidden = true; analyze(); }
+      msg.textContent = j.rows + " events loaded" + (bad.length ? "; failed: " + bad.join(", ") : "");
+    }).catch(function () { msg.textContent = "Could not reach the Python server. Start it with python app.py."; });
+  });
+
+  setSample();
+})();
+</script>
